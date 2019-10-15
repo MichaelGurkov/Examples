@@ -1,0 +1,76 @@
+---
+title: "Panel regression in R"
+author: "Michael Gurkov"
+date: "December 5, 2018"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+```
+
+
+```{r Import_libraries}
+
+library(plm)
+
+library(tidyr)
+
+library(ggplot2)
+
+```
+
+
+Panel regression refers to a data with a spatial as well as time dimension. The example we'll work with is the monthly expenses (as function of income)of Alice, Bob and Eve. 
+
+
+\section{Plain vanila case}
+
+```{r plain_vanila}
+
+coef = list(Alice = list(int = 100, mpc = 0.8),
+            Bob = list(int = 200, mpc = 0.8),
+            Eve  = list(int = 300, mpc = 0.8))
+
+income = seq.int(from = 1000,to = 5000,by = 100)
+
+x_data = matrix(rep(income,3), ncol = 3)
+
+x_data = cbind(1:nrow(x_data), x_data)
+
+colnames(x_data) = c("Time","Alice","Bob","Eve")
+
+x_data = gather(as.data.frame(x_data),"Name","Income",-1)
+
+y_data = sapply(c("Alice","Bob","Eve"),
+                function(name){coef[[name]]$int + coef[[name]]$mpc * income +
+                    rnorm(length(income), sd = 40)})
+
+y_data = cbind(1:nrow(y_data), y_data)
+
+colnames(y_data) = c("Time","Alice","Bob","Eve")
+
+y_data = gather(as.data.frame(y_data),"Name","Consumption",-1)
+
+reg_data = merge.data.frame(x_data,y_data, by = c("Time","Name"))
+
+reg_data = reg_data[order(reg_data$Time),c("Name","Time","Income","Consumption")]
+
+reg = plm(formula = Consumption ~ Income,data = reg_data,model = "pooling")
+
+reg_fe = plm(formula = Consumption ~ Income,data = reg_data,model = "within")
+
+
+```
+
+
+```{r plot_data, eval=FALSE}
+
+ggplot(as.data.frame(y_data), aes(x = Time, y = Consumption, color = Name)) + 
+  geom_line() + 
+  theme_bw()
+
+```
+
+
+In this case the marginal propensity to consume (slope of the population regression line) as well as autonomous consumption (intercept of the population regression line) will be the same 

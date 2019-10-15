@@ -1,0 +1,61 @@
+---
+title: "Coefficients interpretations"
+author: "Michael Gurkov"
+date: "August 19, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r set_parameters, echo=FALSE}
+
+setwd("C:\\Users\\Misha\\Documents\\SandBox")
+
+```
+
+\section{Intro}
+
+Linear regression can include transformed (in a non linear way) variables. In this note we'll look at logarithmic transformation and analyze and interpret the coefficients.
+
+\subsection{Linear model}
+
+The linear model is  
+
+\begin{equation}
+Y = \alpha +\beta X
+\end{equation}
+
+In that case the interpretation of $\beta$ is if X changes by one unit then Y changes by $\beta$ units. We can see it with simple example:
+
+\begin{equation*}
+  Y(X+1) - Y(X) = [\alpha + \beta (X+1)] - [\alpha + \beta X] = \beta
+\end{equation*}
+
+<!-- The partial effect of on Y of incremental change in X will be:  -->
+<!-- \begin{equation*} -->
+<!--   \frac{\Delta Y}{\Delta X} = \beta \Rightarrow \beta = \frac{\Delta Y}{\Delta X} -->
+<!-- \end{equation*} -->
+
+
+\subsection{Linear-log model}
+In this case a logarithmic transformation is applied to X, the model is
+
+\begin{equation*}
+  Y = \alpha +\beta ln(X)
+\end{equation*}
+
+
+In that case the interpretation of $\beta$ is if X changes by one percent then Y changes by $\frac{\beta}{100}$ units. The example:
+
+\begin{equation*}
+  Y(1.01X) - Y(X) = [\alpha + \beta ln(1.01X)] - [\alpha + \beta ln(X)] = \beta ln(1.01) \approx \frac{\beta}{100}
+\end{equation*}
+
+
+<!-- The partial effect of on Y of incremental change in X will be: -->
+<!-- \begin{equation*} -->
+<!--   \frac{\Delta Y}{\Delta X} = \frac{\beta}{X}\Rightarrow \beta = \frac{\Delta Y}{\Delta X} \cdot X -->
+<!-- \end{equation*} -->

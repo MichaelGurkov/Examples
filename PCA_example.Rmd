@@ -1,0 +1,226 @@
+---
+title: "PCA example"
+author: "Michael Gurkov"
+date: "September 30, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, eval=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+
+```{r load_libraries}
+
+library(tidyverse)
+
+library(GGally)
+
+library(mvtnorm)
+
+```
+
+
+\section{Motivation}
+
+Principal Component Analysis is a technique that extracts the most "informative"
+part of the data. This is achieved by transforming a data set through linear combibations.
+
+
+\section{Case study - Transforming student grades dataset}
+
+This is an example with simulated data.Suppose we have 30 students with grades in 10 courses. The dataset will be a 30 row by 10 column matrix where each row represents a student and each column represents an academic course. If we want  to discriminate between the performance of the students we need to look at the grades of each academic course. This is a cumbersome task, if we want to simplify it we can look at one (summary) measure such as the average grade. The downside is that the performance of the same student is probably similiar in different courses and we are kind of looking at the same thing. A better approach will be extracting all the "additional" information from the diffrenet grades and that can be done with PCA.
+
+
+```{r simulate_grades}
+
+set.seed(123)
+
+students_num = 150
+
+courses_num = 2
+
+mean_vec = runif(courses_num, 50,80)
+
+sigma_mat = diag(courses_num)
+
+sigma_mat[lower.tri(sigma_mat)] = 0.7
+
+sigma_mat[upper.tri(sigma_mat)] = sigma_mat[lower.tri(sigma_mat)]
+
+sigma_mat = sigma_mat * 15 ^ 2
+
+grades_mat = rmvnorm(n = students_num,
+                     mean = mean_vec,
+                     sigma = sigma_mat) %>%
+  ceiling(.) %>%
+  as.data.frame() %>%
+  setNames(LETTERS[1:courses_num])
+
+
+```
+
+
+```{r plot_course_grades}
+
+ggplot(grades_mat %>% 
+         gather(key = Course, value = Grade) %>% 
+         group_by(Course) %>% 
+         mutate(Avg_Grade = mean(Grade)),aes(x = Grade)) + 
+  geom_density() + 
+  geom_vline(aes(xintercept = Avg_Grade), color = "red") + 
+  labs(title = "Distribution of grades per course", y = "") + 
+  facet_wrap(~Course) + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.ticks.y = element_blank(), axis.text.y = element_blank())
+
+
+
+```
+
+
+```{r plot_student_grades, eval=FALSE}
+
+students_grades_df = grades_mat %>%
+  mutate(Avg_Grade = rowMeans(.)) %>% 
+  mutate(ID = rownames(.)) %>% 
+  arrange(Avg_Grade)
+  
+
+ggplot(students_grades_df,
+       aes(x = reorder(ID, Avg_Grade), y = Avg_Grade)) + 
+  geom_bar(stat = "identity", width = 0.5) + 
+  labs(title = "Distribution of student average grades",
+       x = "", y = "") + 
+  # coord_flip() + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+```
+
+
+```{r plot_grades_with_ggpairs, eval=FALSE}
+
+ggpairs(grades_mat) + 
+  theme_bw()
+
+```
+
+
+We can see that there are high and low grades in each cours, more average and less extreme values and that there are strong and weak students (as reflected by different average grades)
+
+
+```{r pca_grades}
+
+grades_pca = prcomp(grades_mat, scale. = FALSE,center = FALSE)
+
+pca_comps = data.frame(ID = 1:nrow(grades_pca$x),PCA = grades_pca$x[,1]) %>% 
+  arrange(PCA)
+
+
+```
+
+
+```{r plot_scatter_and_pca}
+
+pca_slope = grades_pca$rotation[2,] / grades_pca$rotation[1,]
+
+cmeans = colMeans(grades_mat)
+
+pca_intercept = cmeans[2] - (pca_slope * pca_slope[1])
+
+x1 = (grades_mat[, 2] - pca_intercept[1]) / pca_slope[1]
+
+y1 = pca_intercept[1] + pca_slope[1] * grades_mat[, 1]
+
+x2 = (x1 + grades_mat[, 1]) / 2
+
+y2 = (y1 + grades_mat[, 2]) / 2
+
+ggplot(data.frame(grades_mat %>% 
+         select(A,B), x2, y2), aes(x = A, y = B)) + 
+  geom_point() + 
+  geom_abline(slope = pca_slope[1],intercept = pca_intercept[1],
+              color = "blue") +
+  geom_segment(aes(xend = x2, yend = y2), color = "red") + 
+  coord_fixed() + 
+  theme_bw()
+
+
+```
+
+
+\section(Important items)
+
+The input data matrix should be of "long" format (have less columns then rows). That is because PCA technique produces linearly independent column) components and the number of independed columns in a matrix is bounded by the number of
+rows. If the the input data is of "wide" formats than the number of components will equal the number of rows.
+
+
+
+```{r load_data}
+
+library(imager)
+
+library(tidyverse)
+
+picture = boats
+
+picture_lond_df = picture %>% 
+  grayscale() %>% 
+  as.data.frame()
+
+picture_wide_df = spread(picture_lond_df,key = y,value = value)
+
+
+```
+
+
+```{r get_pca}
+
+ncomps = 20
+
+pca_picture = prcomp(t(picture_wide_df), scale. = FALSE, center = FALSE)
+
+pca_wide_df = pca_picture$x[,1:ncomps] %*% 
+  t(pca_picture$rotation[,1:ncomps]) %>% 
+  t() %>% 
+  as.data.frame()
+
+# all.equal(picture_wide_df, pca_wide_df)
+
+pca_long_df = pca_wide_df %>% 
+  gather(key = y,value = value, - x) %>% 
+  mutate(y = as.numeric(y))
+
+#all.equal(picture_lond_df, pca_long_df)
+
+
+```
+
+
+```{r plot_results}
+
+# ggplot(picture_lond_df, aes(x = x, y = y, fill = value)) +
+#   geom_tile() +
+#   scale_y_continuous(expand = c(0,0),trans = scales::reverse_trans()) +
+#   scale_x_continuous(expand = c(0,0)) +
+#   scale_fill_gradient(low = "black",high = "white") +
+#   labs(x = "", y = "") + 
+#   theme(legend.position = "none", axis.text = element_blank(),
+#         axis.ticks = element_blank())
+
+
+ggplot(pca_long_df, aes(x = x, y = y, fill = value)) +
+  geom_tile() +
+  scale_y_continuous(expand = c(0,0),trans = scales::reverse_trans()) +
+  scale_x_continuous(expand = c(0,0)) +
+  scale_fill_gradient(low = "black",high = "white") +
+  labs(x = "", y = "") +
+  theme(legend.position = "none", axis.text = element_blank(),
+         axis.ticks = element_blank())
+
+
+```
+
