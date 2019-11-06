@@ -1,0 +1,270 @@
+---
+title: "PCA-MAth"
+author: "Michael Gurkov"
+date: "October 15, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE)
+```
+
+
+```{r load_libraries,echo=FALSE}
+
+library(tidyverse)
+
+library(stargazer)
+
+library(cowplot)
+
+```
+
+
+\section{Methodology}
+
+The mechanics of the PCA is that it calculates some "weighted average" of the
+data thus reducing the dimesion of the data. In matrix form this can be written
+as:
+
+
+
+
+
+
+\subsection{Data}
+
+```{r make_data}
+
+df = data.frame(x = c(2.5,0.5,2.2,1.9,3.1,2.3,2,1,1.5,1.1),
+                y = c(2.4,0.7,2.9,2.2,3.0,2.7,1.6,1.1,1.6,0.9))
+
+```
+
+
+Our example data has `r ncol(df)` features and `r nrow(df)` observations.
+
+```{r head_data, results="asis"}
+
+df %>% 
+  stargazer(summary = FALSE,title = "Example data", header = FALSE)
+  
+  
+
+```
+
+Very important nuance the is centering of the data (subtracting the average value of each column). 
+\textcolor{red}{Why is centering important?}
+
+```{r center_df}
+
+df_center = apply(df,2, function(temp_col){temp_col - mean(temp_col)})
+
+```
+
+Let's take a look at the original (uncentered) and centered data.
+
+```{r plot_data, echo=FALSE}
+
+raw_plot = ggplot(as.data.frame(df), aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") + 
+  labs(title = "Uncentered (raw) data", x = "", y = "") + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+center_plot = ggplot(as.data.frame(df_center), aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(title = "Centered (transformed) data", x = "", y = "") + 
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+plot_grid(raw_plot, center_plot)
+
+
+```
+
+\subsection{Covariance matrix}
+
+Next we calculate the covariance matrix 
+
+```{r cov_mat, results="asis"}
+
+cov_mat = cov(df_center)
+
+cov_mat %>% 
+  stargazer(summary = FALSE,title = "Covariance matrix", header = FALSE)
+
+```
+
+The covaiance matrix is used to obtain the "weights" (loadings) used in the "weighted average" calculation of PCA. First we find the eigenvectors (and the eigenvalues) of the covariance matrix, then we sort the eigenvectors by decreasing order of the eigenvalues and keep only the relevant (highest) eigenvectors.\footnote{If we keep all the eigenvectors than the dimension will be preserved.} 
+
+
+\subsection{Eigenvectors and eigenvalues}
+
+```{r calculate_eigenvectors}
+
+cov_mat_eigenvectos = eigen(cov_mat)
+
+```
+
+
+\subsection{PCA "weights"}
+
+The eigenvectors are the "weights" that are used to summarize the original data into PCA components (each eigenvector forms a component). The PCA projection is performed by the following formula:
+
+\begin{equation}
+ComponentMatrix_{n \times k} = [EigenMatrix^{T}_{k \times  k} * DataMatrix^{T}_{n \times k}]^{T}
+\end{equation}
+
+```{r pca_projection}
+
+components_mat = t(t(cov_mat_eigenvectos$vectors) %*% t(df_center))
+
+```
+
+
+\subsection{Graphical (geometric) Interpretation}
+
+The eigenvectors provide alternative axes (coordination system), the axes are drawn in order to maximize the dispresion (variance of the data points).
+
+Let's look at the dispersion in the original axes coordination system.
+
+
+
+```{r plot_original_dispersion, fig.width=10, echo=FALSE}
+
+orig_disperse_plot = center_plot + 
+  geom_segment(aes(x = x, y = y, xend = x, yend = 0),color = "red") +
+  geom_segment(aes(x = min(df_center[,"x"]), y = 0,
+                   xend = max(df_center[,"x"]), yend = 0),color = "red") +
+  geom_point(aes(x = x, y = 0),color = "red") + 
+  # geom_point(x = df_center[1,"x"], y = df_center[1,"y"], color = "blue") +
+  labs(title = "Original axes dispersion") + 
+  theme(aspect.ratio = 1)
+  
+# Calculate pca parameters
+
+pca_slope_1 = cov_mat_eigenvectos$vectors[2,1] / 
+  cov_mat_eigenvectos$vectors[1,1]
+
+pca_intercept = 0
+
+pca_line_x = df_center[,"y"] / pca_slope_1
+
+pca_line_y = df_center[,"x"] * pca_slope_1
+
+x_avg = 0.5 * (df_center[,"x"] + pca_line_x)
+
+y_avg = 0.5 * (df_center[,"y"] + pca_line_y)
+
+pca_disperse_plot = center_plot + 
+  geom_abline(slope = pca_slope_1,intercept = pca_intercept) + 
+  geom_segment(aes(xend = x_avg, yend = y_avg), color = "red") + 
+  geom_segment(aes(x = min(x_avg), y = min(y_avg),
+                   xend = max(x_avg), yend = max(y_avg)),color = "red") + 
+  geom_point(aes(x = x_avg, y = y_avg),color = "red") + 
+  # geom_point(x = df_center[1,"x"], y = df_center[1,"y"], color = "blue") +
+  labs(title = "PCA axes dispersion") + 
+  theme(aspect.ratio = 1)
+
+plot_grid(orig_disperse_plot, pca_disperse_plot)
+
+
+```
+
+
+\subsubsection{Comparison with R functions}
+
+Of course there already exist an R function that does all that \textit{prcomp}. In this part we'll compare our calculations to the results of this function.
+
+```{r pca_test}
+
+pca_obj = prcomp(df_center,center = FALSE,scale. = FALSE)
+
+prcomp_components = pca_obj$x %>% 
+  abs() %>% 
+  setNames(NULL)
+
+attr(prcomp_components, "dimnames") <- NULL
+
+all.equal(prcomp_components, abs(components_mat))
+
+
+```
+
+
+\section{Backing out original data}
+
+
+That means that in order to "back out" the original data we need 
+
+\begin{equation}
+DataMatrix_{n \times k} = \left[[EigenMatrix^{T}_{k \times  k}] ^ {-1} * [ComponentMatrix_{n \times k}]^{T}\right]^{T}
+\end{equation}
+
+
+```{r back_out}
+
+df_back_out = t(solve(t(cov_mat_eigenvectos$vectors)) %*% t(components_mat))
+
+all.equal(df_back_out, df_center,check.attributes = FALSE)
+
+```
+
+
+```{r, eval=FALSE, echo=FALSE}
+
+library(tidyverse)
+
+
+pca_obj = prcomp(df_center,center = FALSE,scale. = FALSE)
+
+cov_mat = cov(df_center)
+
+ggplot(as.data.frame(df_center), aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") + 
+  geom_abline(slope = cov_mat_eigen$vectors[1,1] /
+                cov_mat_eigen$vectors[2,1],intercept = 0,color = "red") + 
+  geom_abline(slope = cov_mat_eigen$vectors[1,2] /
+                cov_mat_eigen$vectors[2,2],intercept = 0,color = "red") +
+  # xlim(-2,2) + 
+  # ylim(-2,2) + 
+  theme_bw()
+
+
+df_transformed = t(cov_mat_eigen$vectors) %*% t(df_center)
+
+df_transformed = t(df_transformed)
+
+all.equal(abs(df_transformed), abs(pca_obj$x))
+
+ggplot(df_transformed %>% 
+         t() %>% 
+         as.data.frame() %>% 
+         setNames(c("x","y")),
+       aes(x = x, y = y)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  # xlim(-2,2) +
+  # ylim(-2,2) +
+  theme_bw()
+
+df_orig = t(solve(t(cov_mat_eigen$vectors)) %*% df_transformed)
+
+df_orig_pca = t(solve(t(pca_obj$rotation)) %*% t(pca_obj$x))
+
+all.equal(df_orig, df_center)
+
+all.equal(df_orig_pca, df_center)
+
+
+```
+
