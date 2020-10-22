@@ -1,0 +1,91 @@
+---
+title: Parallel processing
+---
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, error = FALSE, warning = FALSE, message = FALSE)
+
+```
+
+```{r libraries}
+
+library(tidyverse)
+
+library(furrr)
+
+library(tictoc)
+
+```
+
+# Simple example
+
+```{r simple_example}
+
+plan(sequential)
+
+tic()
+
+time_waiste = future_map(c(2,2,2), ~Sys.sleep(.))
+
+toc()
+
+
+plan(multisession, workers = 3)
+
+tic()
+
+time_waiste = future_map(c(2,2,2), ~Sys.sleep(.))
+
+toc()
+
+
+```
+
+
+
+# Gotchas
+
+## Grouped data frame
+
+```{r }
+
+set.seed(123)
+
+df = tibble(g = 1:100, x = replicate(100, runif(10), simplify = FALSE))
+
+df = df %>% 
+  group_by(g)
+
+
+plan(sequential)
+
+tic()
+
+seq_df = df %>% 
+  mutate(y = future_map_dbl(x, mean))
+
+toc()
+
+
+plan(multisession, workers = 3)
+
+tic()
+
+parallel_df = df %>% 
+  mutate(y = future_map_dbl(x, mean))
+
+toc()
+
+
+tic()
+
+parallel_df_ungroup = df %>% 
+  ungroup() %>% 
+  mutate(y = future_map_dbl(x, mean))
+
+toc()
+
+
+```
+
