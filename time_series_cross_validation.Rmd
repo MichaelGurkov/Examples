@@ -1,0 +1,87 @@
+---
+title: "Time series cross validation"
+---
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(error = FALSE)
+
+```
+
+```{r load_libraries}
+
+library(tidymodels)
+
+library(tidyverse)
+
+```
+
+
+
+# Univariate time series
+
+
+In case of time series the cross validation should take into account the
+chronological order of the data. It doesn't make sense to train future data in
+order to predict the past. Including future data in training set will cause "data leakage". So, a rolling ("walk foward") cross validation is used
+
+```{r fake_data}
+
+df = tibble(time = seq.Date(from = as.Date("2000-01-01"),
+                            length.out = 10,by = "days"))
+
+```
+
+```{r rolling_cv}
+
+temp_split = df %>% 
+  rolling_origin()
+
+```
+
+```{r plot_rolling_split}
+
+roll_df = map2_dfr(temp_split$splits,temp_split$id, function(split, id){
+  
+  df = analysis(split) %>% 
+    mutate(split_id = id) %>% 
+    mutate(value = str_extract(id,"\\d"))
+  
+  
+  
+})
+
+roll_df %>% 
+  ggplot(aes(x = time, y = value, fill = split_id)) + 
+  geom_point(size = 3) + 
+  xlab(NULL) + ylab(NULL) + 
+  theme(legend.position = "bottom")
+
+
+```
+
+# Panel date
+
+
+```{r fake_panel_data}
+
+panel_df = tibble(time = seq.Date(from = as.Date("2000-01-01"),
+                            length.out = 5,by = "days")) %>% 
+  full_join(tibble(country = LETTERS[1:3]), by = character()) %>% 
+  arrange(time)
+
+```
+
+
+```{r panel_rolling_cv}
+
+temp_panel_split = panel_df %>% 
+  nest(data = c(country))%>% 
+  rolling_origin(initial = 2)
+
+temp_panel_split$splits[[1]] %>% 
+  analysis() %>% 
+  unnest(cols = c(data))
+ 
+```
+
