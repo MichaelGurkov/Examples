@@ -1,0 +1,35 @@
+---
+title: "Distribution functions"
+---
+
+# Distribution functions
+
+# Distribution function
+
+The distribution function is used to understand are we near bottom
+(lower/smaller quantiles) or the top (higher/larger quantiles) of the
+distribution. For example the standard normal distribution can "draw" any value
+but "most" of them will be between -3 and 3. So if we ask where -2 lies we
+should get the answer that it is near the start/bottom of the distribution so we would expect low quantile. The distribution function in R starts with the prefix
+"p" followed by the distribution family. For example the distribution fucntion
+of the standard normal distribution is *pnorm*
+
+
+```{r distribution_function}
+
+pnorm(-2)
+
+```
+
+
+# Density function
+
+The density function is used to estimate the probability of "drawing" a
+specified value from the distribution. For example the standard normal distribution is centered at zero so 0 is the most probable value.
+
+```{r density_function}
+
+dnorm(0)
+
+```
+
