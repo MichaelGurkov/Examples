@@ -1,0 +1,100 @@
+
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, error = FALSE, warning = FALSE,
+                      message = FALSE)
+
+```
+
+```{r load_libraries}
+
+library(tidyverse)
+
+library(AER)
+
+```
+
+```{r load_data}
+
+data("Fatalities")
+
+df = Fatalities %>% 
+  mutate(fatal_rate = fatal / (pop))
+
+```
+
+```{r plot_data}
+
+df %>% 
+  filter(year %in% c("1982","1988")) %>% 
+  ggplot(aes(x = beertax, y = fatal_rate)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  facet_wrap(~year)
+
+```
+
+```{r estimate_model}
+
+coeffs_table = df %>% 
+  filter(year %in% c("1982","1988")) %>% 
+  group_by(year) %>% 
+  group_map(.f = function(temp_df,year){
+    lm(fatal_rate~beertax, data = temp_df) %>% 
+      broom::tidy() %>% 
+      mutate(year)
+    
+  }) %>% 
+  bind_rows()
+
+coeffs_table %>% 
+  filter(term == "beertax") %>% 
+  ggplot(aes(x = year,y = estimate)) + 
+    geom_col()
+
+```
+
+```{r plot_diffs}
+
+df %>% 
+  as_tibble() %>% 
+  filter(year %in% c("1982","1988")) %>% 
+  select(state, year, beertax, fatal_rate) %>% 
+  pivot_longer(cols = -c(year,state)) %>% 
+  pivot_wider(names_from = year,id_cols = c(name, state)) %>% 
+  mutate(diff = `1988` - `1982`) %>% 
+  select(name,diff, state) %>% 
+  pivot_wider(names_from = name, values_from = diff) %>% 
+  ggplot(aes(x = beertax, y = fatal_rate)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)
+  
+
+```
+
+```{r estimate_ln_vs_plm}
+
+lm_diff_data = df %>% 
+  as_tibble() %>% 
+  filter(year %in% c("1982","1988")) %>% 
+  select(state, year, beertax, fatal_rate) %>% 
+  group_by(state) %>% 
+  mutate(across(c(beertax, fatal_rate), ~ . - mean(.)))
+
+plm_data = df %>% 
+  as_tibble() %>% 
+  filter(year %in% c("1982","1988")) %>% 
+  select(state, year, beertax, fatal_rate) %>% 
+  pivot_longer(cols = -c(year,state)) %>% 
+  pivot_wider(names_from = name,id_cols = c(year, state))
+
+lm_mod = lm(formula = formula("fatal_rate~beertax"),data = lm_diff_data)
+
+plm_mod = plm(formula = formula("fatal_rate~beertax"),data = plm_data,
+    index = c("state", "year"),model = "within")
+
+all.equal(coef(plm_mod), coef(lm_mod)[2])
+
+```
+
