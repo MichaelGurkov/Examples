@@ -1,12 +1,10 @@
 ---
 title: "Panel regression in R"
-author: "Michael Gurkov"
-date: "December 5, 2018"
-output: word_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
 ```
 
 
@@ -14,63 +12,506 @@ knitr::opts_chunk$set(echo = FALSE, message = FALSE)
 
 library(plm)
 
-library(tidyr)
+library(tidyverse)
 
 library(ggplot2)
 
-```
+library(cowplot)
 
-
-Panel regression refers to a data with a spatial as well as time dimension. The example we'll work with is the monthly expenses (as function of income)of Alice, Bob and Eve. 
-
-
-\section{Plain vanila case}
-
-```{r plain_vanila}
-
-coef = list(Alice = list(int = 100, mpc = 0.8),
-            Bob = list(int = 200, mpc = 0.8),
-            Eve  = list(int = 300, mpc = 0.8))
-
-income = seq.int(from = 1000,to = 5000,by = 100)
-
-x_data = matrix(rep(income,3), ncol = 3)
-
-x_data = cbind(1:nrow(x_data), x_data)
-
-colnames(x_data) = c("Time","Alice","Bob","Eve")
-
-x_data = gather(as.data.frame(x_data),"Name","Income",-1)
-
-y_data = sapply(c("Alice","Bob","Eve"),
-                function(name){coef[[name]]$int + coef[[name]]$mpc * income +
-                    rnorm(length(income), sd = 40)})
-
-y_data = cbind(1:nrow(y_data), y_data)
-
-colnames(y_data) = c("Time","Alice","Bob","Eve")
-
-y_data = gather(as.data.frame(y_data),"Name","Consumption",-1)
-
-reg_data = merge.data.frame(x_data,y_data, by = c("Time","Name"))
-
-reg_data = reg_data[order(reg_data$Time),c("Name","Time","Income","Consumption")]
-
-reg = plm(formula = Consumption ~ Income,data = reg_data,model = "pooling")
-
-reg_fe = plm(formula = Consumption ~ Income,data = reg_data,model = "within")
-
+library(glue)
 
 ```
 
 
-```{r plot_data, eval=FALSE}
+```{r define_functions}
 
-ggplot(as.data.frame(y_data), aes(x = Time, y = Consumption, color = Name)) + 
+plot_panel_data = function(panel_df, x_var, y_var){
+  
+  time_plot = panel_df %>% 
+  ggplot(aes(x = as.numeric(time), y = {{y_var}}, color = id)) + 
   geom_line() + 
-  theme_bw()
+  xlab(NULL) + ylab(NULL) + ggtitle("Over time")
+
+id_plot = panel_df %>%
+  ggplot(aes(x = id, y = {{y_var}}, color = time)) +
+  geom_point() +
+  xlab(NULL) + ylab(NULL) + ggtitle("Over id")
+
+xy_plot = panel_df %>%
+  ggplot(aes(x = {{x_var}}, y = {{y_var}})) +
+  geom_point() +
+  xlab(vars({{x_var}})) + ylab((vars({{y_var}})))
+
+lower_panel = plot_grid(time_plot, id_plot)
+  
+panel_plot = plot_grid(xy_plot,lower_panel,nrow = 2) 
+
+print(panel_plot)
+
+
+}
 
 ```
 
 
-In this case the marginal propensity to consume (slope of the population regression line) as well as autonomous consumption (intercept of the population regression line) will be the same 
+
+Panel regression refers to a data with a cross section as well as time dimension. The example we'll work with is the monthly expenses (as function of income)of Alice,Bob and Eve. 
+
+
+
+\section{Cross section fixed effects}
+
+The model that we are looking at is:
+
+$$ Y_{it} = \alpha_{i} + \beta x_{it}$$
+
+Each state has a unique level of consumption and if we don't account for it we
+get the wrong estimates. That is probably because 
+
+
+```{r cross_section_case}
+
+set.seed(123)
+
+cross_section_case = list()
+
+coef_list = list(
+  alice = list(int = 100, mpc = 0.8),
+  bob = list(int = 200, mpc = 0.8),
+  eve  = list(int = 300, mpc = 0.8)
+)
+
+cross_section_case$reg_data = coef_list %>% 
+  map_dfr(function(temp_ind){
+    
+    temp_data = tibble(income = ceiling(runif(5,500,900))) %>% 
+      mutate(consumption = temp_ind$int + temp_ind$mpc * income) %>% 
+      rownames_to_column(var = "time")
+    
+    return(temp_data)
+
+  },.id = "id")
+
+rm(coef_list)
+
+
+```
+
+
+```{r cross_section_case_plot_data, fig.height=8}
+
+plot_panel_data(cross_section_case$reg_data,x_var = income, y_var = consumption)
+
+
+```
+
+```{r cross_section_case_estimation}
+
+cross_section_case$formula = formula("consumption ~ income")
+
+cross_section_case$lm = lm(formula = cross_section_case$formula,
+                      data = cross_section_case$reg_data)
+
+cross_section_case$pooling_reg = plm(
+  formula = formula(cross_section_case$formula),
+  data = cross_section_case$reg_data,
+  index = c("id", "time"),
+  model = "pooling"
+)
+
+cross_section_case$individual_reg = plm(
+  formula = formula(cross_section_case$formula),
+  data = cross_section_case$reg_data,
+  index = c("id", "time"),
+  model = "within",
+  effect = "individual"
+)
+
+
+```
+
+```{r cross_section_check_coeffs, echo=TRUE}
+
+all.equal(coefficients(cross_section_case$pooling_reg)[2],
+          coefficients(cross_section_case$individual_reg))
+
+```
+
+\subsection {Demeaning estimation}
+
+One method of dealing with this issue is look at the deviation from the average consumption by state. That will take care of the
+level difference. The "demeaning" should be performed on all the variables.
+
+
+```{r cross_section_case_demean_estimation}
+
+cross_section_case$demean_reg = cross_section_case$reg_data %>% 
+  group_by(id) %>% 
+  mutate(across(c(income, consumption), ~. - mean(.))) %>% 
+  lm(formula = cross_section_case$formula, data = .)
+
+cross_section_case$dummy_reg = cross_section_case$reg_data %>% 
+  lm(formula = "consumption ~ income + id", data = .)
+
+
+
+```
+
+```{r cross_section_check_demean_coeffs, echo=TRUE}
+
+all.equal(coefficients(cross_section_case$demean_reg)[2],
+          coefficients(cross_section_case$dummy_reg)[2],
+          coefficients(cross_section_case$individual_reg))
+
+```
+
+\section{Time fixed effects}
+
+The model that we are looking at is:
+
+$$ Y_{it} = \alpha +  \gamma_{t} + \beta x_{it}$$
+
+Now each time period has a unique level of consumption and if we don't account for
+it we get the wrong estimates.
+
+
+```{r time_case}
+
+set.seed(123)
+
+time_case = list()
+
+coef_list = list(
+  alice = list(int = 200, mpc = 0.8),
+  bob = list(int = 200, mpc = 0.8),
+  eve  = list(int = 200, mpc = 0.8)
+)
+
+time_case$reg_data = coef_list %>% 
+  map_dfr(function(temp_ind){
+    
+    temp_data = tibble(income = ceiling(runif(5,500,900))) %>% 
+      mutate(consumption = temp_ind$int + temp_ind$mpc * income) %>% 
+      rownames_to_column(var = "time")
+    
+    return(temp_data)
+
+  },.id = "id") %>% 
+  mutate(consumption = case_when(time == 1 ~ consumption + 100,
+                                 time == 2 ~ consumption + 200,
+                                 time == 3 ~ consumption - 100,
+                                 time == 4 ~ consumption - 200,
+                                 time == 5 ~ consumption + 300))
+
+rm(coef_list)
+
+
+```
+
+
+```{r time_case_plot_data, fig.height=8}
+
+plot_panel_data(time_case$reg_data,x_var = income, y_var = consumption)
+
+
+```
+
+```{r time_case_estimation}
+
+time_case$formula = formula("consumption ~ income")
+
+time_case$lm = lm(formula = time_case$formula,
+                      data = time_case$reg_data)
+
+time_case$pooling_reg = plm(
+  formula = formula(time_case$formula),
+  data = time_case$reg_data,
+  index = c("id", "time"),
+  model = "pooling"
+)
+
+time_case$time_reg = plm(
+  formula = formula(time_case$formula),
+  data = time_case$reg_data,
+  index = c("id", "time"),
+  model = "within",
+  effect = "time"
+)
+
+
+```
+
+```{r time_check_coeffs, echo=TRUE}
+
+all.equal(coefficients(time_case$pooling_reg)[2],
+          coefficients(time_case$time_reg))
+
+```
+
+\subsection {Demeaning estimation}
+
+One method of dealing with this issue is look at the deviation from the average consumption by state. That will take care of the
+level difference. The "demeaning" should be performed on all the variables.
+
+
+```{r time_case_demean_estimation}
+
+time_case$demean_reg = time_case$reg_data %>% 
+  group_by(time) %>% 
+  mutate(across(c(income, consumption), ~. - mean(.))) %>% 
+  lm(formula = time_case$formula, data = .)
+
+time_case$dummy_reg = time_case$reg_data %>% 
+  lm(formula = "consumption ~ income + time", data = .)
+
+
+
+```
+
+```{r time_check_demean_coeffs, echo=TRUE}
+
+all.equal(coefficients(time_case$demean_reg)[2],
+          coefficients(time_case$dummy_reg)[2],
+          coefficients(time_case$time_reg))
+
+```
+
+\section{Cross section and time effect}
+
+
+```{r cross_section_time_case}
+
+set.seed(123)
+
+cross_section_time_case = list()
+
+coef_list = list(
+  alice = list(int = 100, mpc = 0.8),
+  bob = list(int = 200, mpc = 0.8),
+  eve  = list(int = 300, mpc = 0.8)
+)
+
+cross_section_time_case$reg_data = coef_list %>% 
+  map_dfr(function(temp_ind){
+    
+    temp_data = tibble(income = ceiling(runif(5,500,900))) %>% 
+      mutate(consumption = temp_ind$int + temp_ind$mpc * income) %>% 
+      rownames_to_column(var = "time")
+    
+    return(temp_data)
+
+  },.id = "id") %>% 
+  mutate(consumption = case_when(time == 1 ~ consumption + 100,
+                                 time == 2 ~ consumption + 200,
+                                 time == 3 ~ consumption - 100,
+                                 time == 4 ~ consumption - 200,
+                                 time == 5 ~ consumption + 300))
+
+rm(coef_list)
+
+
+```
+
+
+```{r cross_section_time_case_plot_data, fig.height=8}
+
+plot_panel_data(cross_section_time_case$reg_data,
+                x_var = income,
+                y_var = consumption)
+
+
+```
+
+```{r cross_section_time_case_estimation}
+
+cross_section_time_case$formula = formula("consumption ~ income")
+
+cross_section_time_case$lm = lm(formula = cross_section_time_case$formula,
+                      data = cross_section_time_case$reg_data)
+
+cross_section_time_case$pooling_reg = plm(
+  formula = formula(cross_section_time_case$formula),
+  data = cross_section_time_case$reg_data,
+  index = c("id", "time"),
+  model = "pooling"
+)
+
+cross_section_time_case$fe_reg = plm(
+  formula = formula(cross_section_time_case$formula),
+  data = cross_section_time_case$reg_data,
+  index = c("id", "time"),
+  model = "within",
+  effect = "twoway"
+)
+
+
+```
+
+```{r cross_section_time_check_coeffs, echo=TRUE}
+
+all.equal(coefficients(cross_section_time_case$pooling_reg)[2],
+          coefficients(cross_section_time_case$fe_reg))
+
+```
+
+
+```{r cross_section_time_demean_estimation}
+
+cross_section_time_case$demean_reg = cross_section_time_case$reg_data %>% 
+  group_by(time) %>% 
+  mutate(across(c(income, consumption), ~. - mean(.))) %>%
+  group_by(id) %>% 
+  mutate(across(c(income, consumption), ~. - mean(.))) %>% 
+  lm(formula = cross_section_time_case$formula, data = .)
+
+cross_section_time_case$dummy_reg = cross_section_time_case$reg_data %>% 
+  lm(formula = "consumption ~ income + id + time", data = .)
+
+
+
+```
+
+```{r cross_section_time_check_demean_coeffs, echo=TRUE}
+
+all.equal(coefficients(cross_section_time_case$demean_reg)[2],
+          coefficients(cross_section_time_case$dummy_reg)[2],
+          coefficients(cross_section_time_case$fe_reg))
+
+```
+
+
+\section {Specific plm issues}
+
+```{r cross_section_conflict_case}
+
+coef_list = list(
+  alice = list(int = 100, mpc = 0.8),
+  bob = list(int = 200, mpc = 0.8),
+  eve  = list(int = 300, mpc = 0.8)
+)
+
+cross_fe_data = coef_list %>% 
+  map_dfr(function(temp_ind){
+    
+    temp_data = tibble(income = ceiling(runif(5,500,900))) %>% 
+      mutate(consumption = temp_ind$int + temp_ind$mpc * income) %>% 
+      rownames_to_column(var = "time")
+    
+    return(temp_data)
+
+  },.id = "id") %>% 
+  mutate(id_fe = if_else(id == "bob",1,0)) %>% 
+  mutate(time_fe = if_else(time == 3,1,0)) %>%
+  mutate(consumption = consumption + 300 * id_fe) %>% 
+  mutate(consumption = consumption - 0.2 * income * time_fe)
+
+rm(coef_list)
+
+
+```
+
+```{r cross_section_conflict_estimation}
+
+lm_reg = lm(
+  formula = formula("consumption ~ income*id_fe + income*time_fe + id + time"),
+  data = cross_fe_data
+)
+
+plm_reg = plm(
+  formula = formula("consumption ~ income*id_fe + income*time_fe"),
+  data = cross_fe_data,
+  index = c("id", "time"),
+  model = "within",
+  effect = "twoway"
+)
+
+
+```
+
+```{r cross_section_conflict_case_check_coeffs, echo=TRUE}
+
+all.equal(coefficients(lm_reg)[c("income","income:id_fe","income:time_fe")],
+          coefficients(plm_reg)[c("income","income:id_fe","income:time_fe")])
+
+```
+
+
+
+
+\section{Degenerate case}
+
+In case where the income (independent var) is the same for all the individuals
+we'll get an identity between income levels and time periods (in each period)
+all the individuals have the same income. In that case pooling regression and individual effect regression will give the same coeffs.
+
+```{r cross_section_degenerate_case}
+
+cross_section_degenerate_case = list()
+
+coef_list = list(
+  alice = list(int = 100, mpc = 0.8),
+  bob = list(int = 200, mpc = 0.8),
+  eve  = list(int = 300, mpc = 0.8)
+)
+
+cross_section_degenerate_case$reg_data = coef_list %>% 
+  map_dfr(function(temp_ind){
+    
+    temp_data = tibble(income = seq(from = 500, to = 900, by = 100)) %>% 
+      mutate(consumption = temp_ind$int + temp_ind$mpc * income) %>% 
+      rownames_to_column(var = "time")
+    
+    return(temp_data)
+
+  },.id = "id")
+
+rm(coef_list)
+
+
+```
+
+
+```{r cross_section_degenerate_case_plot_data}
+
+plot_panel_data(cross_section_degenerate_case$reg_data,x_var = income, y_var = consumption)
+
+
+```
+
+
+```{r cross_section_degenerate_case_estimation}
+
+cross_section_degenerate_case$formula = formula("consumption ~ income")
+
+cross_section_degenerate_case$lm = lm(formula = cross_section_degenerate_case$formula,
+                      data = cross_section_degenerate_case$reg_data)
+
+cross_section_degenerate_case$pooling_reg = plm(
+  formula = formula(cross_section_degenerate_case$formula),
+  data = cross_section_degenerate_case$reg_data,
+  index = c("id", "time"),
+  model = "pooling"
+)
+
+cross_section_degenerate_case$individual_reg = plm(
+  formula = formula(cross_section_degenerate_case$formula),
+  data = cross_section_degenerate_case$reg_data,
+  index = c("id", "time"),
+  model = "within",
+  effect = "individual"
+)
+
+
+```
+
+```{r check_coeffs, echo=TRUE}
+
+all.equal(coefficients(cross_section_degenerate_case$pooling_reg)[2],
+          coefficients(cross_section_degenerate_case$individual_reg))
+
+```
+
+
+As for the time effects aspect the degenerate case will produce perfect linear
+combination since we'll essentially get three (by number of id's) "identical" 
+observations for each time period.
