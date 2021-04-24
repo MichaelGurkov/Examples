@@ -1,0 +1,95 @@
+----
+title: "Tuning params"
+----
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, error = FALSE, warning = FALSE,
+                      message = FALSE)
+
+```
+
+```{r load_libraries}
+
+library(tidyverse)
+
+library(tidymodels)
+
+```
+
+# Intro
+
+There are instances in which we have parameters that are determined "outside"
+the model (such as a penalty value for regularization models). In case we don't
+know a "good" (hopefully optimal) value for such parameters we can try to go
+over a list of some possible values and choose the best one from this list.
+
+# Example
+
+The data I'll be using is the heart data
+
+```{r load_and_split_data}
+
+df = read_csv(here::here("data", "heart.csv"))
+
+heart_split = initial_split(df)
+
+heart_train = training(heart_split)
+
+heart_test = testing(heart_split)
+
+```
+
+```{r define_workflow, echo=TRUE}
+
+heart_recipe = recipe(target ~ ., data = heart_train)
+
+heart_model = linear_reg(penalty = tune(),mixture = 0) %>% 
+  set_engine("glmnet")
+
+heart_wf = workflow() %>% 
+  add_recipe(heart_recipe) %>% 
+  add_model(heart_model)
+
+heart_cv = tune_grid(heart_wf,
+                     resamples = vfold_cv(heart_train),
+                     grid = grid_regular(penalty(), levels = 50))
+
+
+```
+
+```{r glmnet}
+
+heart_glmnet = cv.glmnet(
+  x = heart_train %>%
+    select(-target) %>%
+    as.matrix(),
+  y = heart_train %>%
+    select(target) %>%
+    as.matrix(),
+  alpha = 0
+)
+
+```
+
+
+
+```{r}
+
+heart_cv %>% 
+  collect_metrics() %>% 
+  filter(.metric == "rmse") %>% 
+  mutate(mean = mean ^ 2) %>% 
+  ggplot(aes(x = penalty, y = mean)) + 
+  geom_point() + 
+  geom_line() + 
+  geom_errorbar(aes(ymin = mean - std_err, ymax = mean + std_err)) + 
+  scale_x_log10()
+
+# plot(heart_glmnet, xvar = "lambda")
+
+
+
+
+```
+
