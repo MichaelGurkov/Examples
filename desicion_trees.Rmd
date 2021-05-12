@@ -1,0 +1,73 @@
+----
+title: "Decision trees"
+----
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, error = FALSE, warning = FALSE,
+                      message = FALSE)
+
+```
+
+```{r load_libraries}
+
+library(tidyverse)
+
+library(tidymodels)
+
+```
+
+```{r load_data}
+
+df_raw = read_csv(paste0(
+  file.path(
+    Sys.getenv("USERPROFILE"),
+    "\\Google Drive\\Kaggle\\Titanic\\train.csv"
+  )
+)) %>% 
+  rename_all(tolower)
+
+numeric_features = c("sibsp","parch","fare")
+
+categoric_features = c("sex","embarked","pclass")
+
+df_raw = df_raw %>% 
+  select(survived, all_of(numeric_features), all_of(categoric_features))
+
+
+```
+
+```{r split_data}
+
+data_split = initial_split(df_raw)
+
+train_set = training(data_split)
+
+test_set = testing(data_split)
+
+```
+
+```{r set_model}
+
+model_recipe = recipe(survived ~ ., data = train_set) %>% 
+  step_mutate(survived = factor(survived, levels = c(0,1)))
+
+model_spec = decision_tree(mode = "classification") %>% 
+  set_engine("rpart")
+
+model_wf = workflow() %>% 
+  add_recipe(model_recipe) %>% 
+  add_model(model_spec) %>% 
+  fit(train_set)
+
+```
+
+```{r plot_tree}
+
+x = model_wf %>% 
+  pull_workflow_fit() 
+
+rpart.plot::rpart.plot(x$fit)
+
+```
+
