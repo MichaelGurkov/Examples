@@ -1,0 +1,67 @@
+---
+title: "Optimization"
+---
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, error = FALSE, warning = FALSE, message = FALSE)
+
+```
+
+```{r load_libraries}
+
+
+```
+
+# Fitting linear regression
+
+```{r lin_reg}
+
+dat = data.frame(x=c(1,2,3,4,5,6), 
+               y=c(1,3,5,6,8,12))
+
+reg_loss_function = function(reg_data, reg_coeffs){
+  
+  errors = reg_data$y - (reg_coeffs[1] + reg_coeffs[2] * reg_data$x)
+  
+  return(sum(errors ^ 2))
+  
+}
+
+
+optim_lin = optim(par = c(0,1), fn = reg_loss_function, reg_data = dat)
+
+lin_reg_coeff = lm(y~x, data = dat)
+
+if(sum(optim_lin$par - lin_reg_coeff$coefficients) < 10 ^ -4){
+  
+  print("matched lm coeffs")
+}
+
+
+```
+
+# Fitting Poison distribution
+
+```{r poison}
+
+obs = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 17, 42, 43)
+
+freq = c(1392, 1711, 914, 468, 306, 192, 96, 56, 35, 17, 15, 6, 2, 2, 1, 1)
+
+count_data = rep(obs, freq)
+
+poison_log_likelihood_negative = function(gamma_par, obs){
+  
+  result = -sum(obs * log(gamma_par) - log(factorial(obs)) - gamma_par) 
+  
+  return(result)
+  
+}
+
+optim_posion = optim(par = 2, fn = poison_log_likelihood_negative, obs = count_data,
+                     method = "Brent",lower = 2, upper = 3)
+
+
+```
+

@@ -1,0 +1,89 @@
+---
+title: "Logistic Regression"
+---
+
+```{r include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE,error = FALSE, message = FALSE)
+
+```
+
+
+```{r load_libraries}
+
+library(tidyverse)
+
+library(tidymodels)
+
+```
+
+
+# Intro
+
+Logistic regression allows us to work with target categorical variables.
+
+
+# Simulation
+
+```{r simulate_data}
+
+set.seed(1)
+
+n_size = 1000
+
+beta0 = -2
+
+x1 = rnorm(n = n_size)
+
+beta1 = 3
+
+x2 = rnorm(n = n_size)
+
+beta2 = -3
+
+z = beta0 + beta1 * x1 + beta2 * x2
+
+p = 1 / (1 + exp(-z))
+
+target = rbinom(n_size, 1, p)
+
+
+df = tibble(x1,x2, target) %>% 
+  mutate(target = factor(target,levels = c(1,0)))
+
+rm(list = ls()[!ls() == "df"])
+
+```
+
+```{r plot, eval=FALSE}
+
+df %>% 
+  pivot_longer(-target) %>% 
+  group_by(target,name) %>% 
+  summarise(avg = mean(value), .groups = "drop") %>% 
+  ggplot(aes(x = name, y = avg, fill = target)) + 
+  geom_col(position = "dodge")
+
+
+```
+
+```{r estimate_model}
+
+results_models = workflow() %>% 
+  add_recipe(recipe(target ~ ., data = df)) %>% 
+  add_model(logistic_reg(penalty = 0) %>% 
+              set_engine("glmnet")) %>% 
+  fit(df)
+
+results_models %>% 
+  tidy() %>% 
+  pull(estimate) %>% 
+  sign()
+
+# results = glm(target ~ ., data = df, family = binomial)
+# 
+# results %>% 
+#   tidy()
+
+```
+
